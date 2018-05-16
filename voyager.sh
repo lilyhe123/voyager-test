@@ -7,6 +7,15 @@ echo "checking kubeconfig context"
 kubectl config current-context || { echo "Set a context (kubectl use-context <context>) out of the following:"; echo; kubectl config get-contexts; exit 1; }
 echo ""
 
+operatorTemplate=operator-template.yaml
+userRolesTemplate=user-roles-template.yaml
+rbacListTemplate=rbac-list-template.yaml 
+
+operatorYaml=operator.yaml
+userRolesYaml=user-roles.yaml
+rbacListYaml=rbac-list.yaml 
+
+
 # http://redsymbol.net/articles/bash-exit-traps/
 function cleanup {
     rm -rf $ONESSL ca.crt ca.key server.crt server.key
@@ -46,7 +55,7 @@ fi
 # ref: https://jonalmeida.com/posts/2013/05/26/different-ways-to-implement-flags-in-bash/
 # ref: http://tldp.org/LDP/abs/html/comparison-ops.html
 
-export VOYAGER_NAMESPACE=kube-system
+export VOYAGER_NAMESPACE=voyager
 export VOYAGER_SERVICE_ACCOUNT=voyager-operator
 export VOYAGER_ENABLE_RBAC=true
 export VOYAGER_RUN_ON_MASTER=0
@@ -58,6 +67,10 @@ export VOYAGER_IMAGE_PULL_SECRET=
 export VOYAGER_UNINSTALL=0
 export VOYAGER_PURGE=0
 export VOYAGER_TEMPLATE_CONFIGMAP=
+
+export VOYAGER_CLOUD_PROVIDER=
+export VOYAGER_CLOUD_CONFIG=
+export VOYAGER_INGRESS_CLASS=
 
 KUBE_APISERVER_VERSION=$(kubectl version -o=json | $ONESSL jsonpath '{.serverVersion.gitVersion}')
 $ONESSL semver --check='<1.9.0' $KUBE_APISERVER_VERSION || { export VOYAGER_ENABLE_ADMISSION_WEBHOOK=true; }
@@ -291,7 +304,8 @@ export TLS_SERVING_CERT=$(cat server.crt | $ONESSL base64)
 export TLS_SERVING_KEY=$(cat server.key | $ONESSL base64)
 export KUBE_CA=$($ONESSL get kube-ca | $ONESSL base64)
 
-curl -fsSL https://raw.githubusercontent.com/appscode/voyager/6.0.0/hack/deploy/operator.yaml | $ONESSL envsubst | kubectl apply -f -
+cat $operatorTemplate | $ONESSL envsubst > $operatorYaml
+kubectl apply -f $operatorYaml 
 
 if [ -n "$VOYAGER_TEMPLATE_CONFIGMAP" ]; then
 	kubectl get configmap -n $VOYAGER_NAMESPACE $VOYAGER_TEMPLATE_CONFIGMAP >/dev/null 2>&1
@@ -306,8 +320,11 @@ fi
 if [ "$VOYAGER_ENABLE_RBAC" = true ]; then
     kubectl create serviceaccount $VOYAGER_SERVICE_ACCOUNT --namespace $VOYAGER_NAMESPACE
     kubectl label serviceaccount $VOYAGER_SERVICE_ACCOUNT app=voyager --namespace $VOYAGER_NAMESPACE
-    curl -fsSL https://raw.githubusercontent.com/appscode/voyager/6.0.0/hack/deploy/rbac-list.yaml | $ONESSL envsubst | kubectl auth reconcile -f -
-    curl -fsSL https://raw.githubusercontent.com/appscode/voyager/6.0.0/hack/deploy/user-roles.yaml | $ONESSL envsubst | kubectl auth reconcile -f -
+    cat $rbacListTemplate | $ONESSL envsubst > $rbacListYaml
+    kubectl auth reconcile -f $rbacListYaml
+
+    cat $userRolesTemplate| $ONESSL envsubst > $userRolesYaml
+    kubectl auth reconcile -f $rbacListYaml 
 fi
 
 if [ "$VOYAGER_RUN_ON_MASTER" -eq 1 ]; then
